@@ -49,9 +49,9 @@ Depois disso, todo pedido é roteado. Para desligar: `stop router`. Para forçar
 /model-router-stats
 ```
 
-ou pergunte "quanto economizei" / "% de economia". O hook (`hooks/hooks.json` → `scripts/stats-hook.js`) lê o transcript JSONL da própria sessão — modelo e tokens reais de cada chamada, sessão principal e subagents — e compara o custo real contra o custo se tudo tivesse rodado em Opus. Sem estimativa do modelo: o hook intercepta o pedido e responde direto.
+É um slash command de verdade (`commands/model-router-stats.md`): manda o Claude achar o transcript desta sessão e rodar `scripts/stats-hook.js` sobre ele via Bash, repassando o resultado tal como vier — modelo e tokens reais de cada chamada (sessão principal e subagents), custo real vs. custo se tudo tivesse rodado em Opus. Sem estimativa do modelo.
 
-Em turnos normais o hook só faz um check de substring no prompt e sai — não lê o transcript, custo desprezível. Só parseia o arquivo quando a frase-gatilho aparece.
+Também existe um hook (`hooks/hooks.json` → `UserPromptSubmit`) tentando a mesma coisa quando você escreve "quanto economizei" / "% de economia" em texto puro — mas isso depende do host honrar injeção de contexto nesse evento, o que não é garantido em todo lugar. O comando `/model-router-stats` é o caminho que funciona de fato.
 
 Os preços usados ficam em `PRICING` no topo de `plugins/model-router/scripts/stats-hook.js` (USD por milhão de tokens) — confira contra a tabela oficial (https://docs.claude.com/en/docs/about-claude/pricing) antes de divulgar números.
 
@@ -68,7 +68,8 @@ Os preços usados ficam em `PRICING` no topo de `plugins/model-router/scripts/st
 plugins/model-router/
   .claude-plugin/plugin.json             manifesto do plugin
   skills/model-router/SKILL.md           regras de classificação e delegação
-  hooks/hooks.json                       UserPromptSubmit -> stats-hook.js
+  commands/model-router-stats.md         slash command /model-router-stats
+  hooks/hooks.json                       UserPromptSubmit -> stats-hook.js (best-effort)
   scripts/stats-hook.js                  leitura real do transcript + custo
 ```
 
