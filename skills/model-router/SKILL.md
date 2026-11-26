@@ -11,6 +11,16 @@ Route every request to the cheapest model that can do it well. The main session 
 
 ACTIVE ON EVERY REQUEST after invocation. Keep routing until the user says "stop router", "router off" or "normal mode". Do not drift back to doing everything in the main thread.
 
+## Step 0 — Size gate (before classifying)
+
+A fresh subagent pays a fixed cold-start cost: it re-derives context it cannot see. That cost can exceed the model-price savings on small tasks. Before picking a tier, check:
+- **≤2 known files**, no multi-step reasoning → **direct**, regardless of verb. "Read this file and tell me X" on one or two known files is direct, not haiku — raising this from 1 to 2 removes most Explore-agent calls that cost more than they save.
+- Expected subagent work < ~30s (single grep, one short read) → **direct** even if classification below would say haiku. Cold-start latency + tokens can exceed the saving.
+- Several small independent reads/edits queued for the same turn, **with no dependency between them** → do not spawn one subagent per item. Batch into a single subagent call whose prompt lists every item.
+- If item B needs item A's output → sequential, not batched. Batching only applies to independent items.
+
+Only tasks that genuinely need isolated, uninterrupted work (so their raw tool output doesn't flood the main thread) earn a subagent.
+
 ## Step 1 — Classify the request
 
 Pick exactly one tier. When in doubt between two tiers, pick the **cheaper** one unless the cost of a wrong answer is high (architecture, data loss, security), then pick the stronger one.
@@ -27,14 +37,18 @@ Signals:
 - *refatorar, ajustar, corrigir, adicionar teste, implementar (plano pronto), refactor, fix, add* → **sonnet**
 - *planejar, projetar, nova feature, arquitetura, por que isso falha às vezes, plan, design, architect* → **opus**
 - Mixed request (e.g. "plan and implement feature X") → split it: **opus** plans, then **sonnet** implements the approved plan.
+- Signals conflict (e.g. verb says haiku but scope touches many files, or "ajustar performance" with no known cause) → do not guess. Default to **sonnet**, never to opus by default — only opus if the ambiguity itself is about unknown root cause or architecture.
+- A request of the same shape as one already routed this session (same verb class, same area of the code) → reuse that tier directly, skip re-classifying. If it later escalated for that shape, start the next occurrence one tier higher than the original guess.
 
-## Step 2 — Announce in one line
+## Step 2 — Announce (only on change)
 
-Before acting, tell the user the choice in one short line, in the user's language:
+Announce the tier in one short line, in the user's language, **only when it differs from the previous call's tier**, or it's the first routed call this session:
 
 `→ haiku: leitura e resumo de 3 arquivos`
 `→ opus: planejamento de feature nova`
 `→ direto: pergunta simples`
+
+Repeated calls at the same tier (e.g. three haiku reads in a row) stay silent — one announcement covers the streak. This matters in long sessions: 50 announcements of the same tier is pure noise.
 
 The user can override at any time ("usa opus nisso", "force sonnet"). An explicit override always wins for that request.
 
@@ -60,7 +74,8 @@ Do not spawn a subagent just to read one small file you could read yourself in o
 ## Step 4 — Relay and escalate
 
 - Relay the subagent's result to the user concisely. The user does not see the subagent's report.
-- If the result is wrong, incomplete or the subagent got stuck, **escalate one tier** (haiku → sonnet → opus) and retry with a better brief, telling the user: `→ subindo pra sonnet: haiku não resolveu`.
+- If the result is wrong, incomplete or the subagent got stuck, **escalate one tier** (haiku → sonnet → opus) and retry, telling the user: `→ subindo pra sonnet: haiku não resolveu`.
+  - Carry the failed subagent's partial output into the new prompt (what it found, what it tried, where it got stuck). Never restart from a blank brief — that forces the stronger model to redo discovery the cheaper one already paid for.
 - Never escalate above opus.
 - After an opus plan is accepted, implementation goes back down to **sonnet**.
 
@@ -70,6 +85,17 @@ Do not spawn a subagent just to read one small file you could read yourself in o
 - Batch related small reads into one haiku subagent instead of many.
 - Keep subagent briefs tight: enough context to avoid re-discovery, no conversation dumps.
 - Reuse a finished subagent with SendMessage for follow-ups on the same task instead of spawning a new one.
+
+## Savings tracking (real, not estimated)
+
+`scripts/stats-hook.js` is a `UserPromptSubmit` hook (registered in the user's `settings.json`) that reads the session's own transcript JSONL — the same file Claude Code writes every assistant turn to, main thread and subagents (`isSidechain`) alike, each with real `model` and `usage` token counts. No estimation, no self-reported tally.
+
+- On every normal turn it does one cheap substring check on the prompt and exits immediately — it does not parse the transcript unless the trigger phrase is present. Negligible weight on the session.
+- On trigger (`/model-router-stats`, "quanto economizei", "% de economia", etc.) it parses the transcript once, sums real input/output tokens per tier (`direct` = main session, `routed` = subagent calls) using `PRICING` constants in the script, and computes `% economia = (1 - custo_real / custo_se_tudo_fosse_opus) × 100`.
+- It answers via `{"decision":"block","reason": <report>}` — the prompt never reaches the model, the user sees the real numbers straight from the hook. The model does nothing here except, if asked, explain or translate the already-computed report.
+- `PRICING` in the script is an editable table (USD per million tokens); keep it matched to the current official pricing page before quoting numbers publicly.
+
+**Fallback (only if the hook is unavailable):** hooks disabled, running outside Claude Code, or `transcript_path` missing — say so in one line, then fall back to a rough estimate: count calls per tier this session, weight them `haiku=1, sonnet=5, opus=25` (approximate price ratios), `economia_% ≈ (1 - Σcalls×weight / Σcalls×25) × 100`. Always label this explicitly as an estimate, never present it as the real number.
 
 ## Boundaries
 

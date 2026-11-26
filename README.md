@@ -27,6 +27,37 @@ mkdir -p ~/.claude/skills && cp -r claude-model-router/skills/model-router ~/.cl
 
 Por projeto: copie para `.claude/skills/model-router/` dentro do repositório.
 
+### Economia real de tokens (opcional)
+
+A skill vem com um hook (`scripts/stats-hook.js`) que lê o transcript da própria sessão e reporta economia **real**, não estimada — soma tokens reais por modelo (`input`/`output`, sessão principal e subagents) e compara contra o custo se tudo tivesse rodado em Opus.
+
+Pra ativar, adicione em `~/.claude/settings.json` (ajuste o caminho pro seu SO):
+
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"/caminho/para/~/.claude/skills/model-router/scripts/stats-hook.js\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Reinicie o Claude Code (hooks só carregam no início da sessão) e digite `/model-router-stats`.
+
+Em turnos normais o hook só faz um check de substring no prompt e sai — não lê o transcript, custo desprezível. Só parseia o arquivo quando a frase-gatilho aparece.
+
+Os preços usados ficam em `PRICING` no topo do script (USD por milhão de tokens) — confira contra a tabela oficial (https://docs.claude.com/en/docs/about-claude/pricing) antes de divulgar números.
+
 ## Uso
 
 ```
