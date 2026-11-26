@@ -1,8 +1,16 @@
 #!/usr/bin/env node
 // UserPromptSubmit hook: real token-usage report for model-router.
 // Cheap on every turn (one substring check), only reads the transcript
-// when the trigger phrase matches. Blocks the prompt and shows the
-// report directly — the model is not involved in computing numbers.
+// when the trigger phrase matches.
+//
+// IMPORTANT (confirmed against ponytail-runtime.js's writeHookOutput and the
+// hookify plugin's rule_engine.py): in native Claude Code, a UserPromptSubmit
+// hook cannot block the turn or replace the user's message. It can only
+// inject extra context by writing plain text to stdout — that text is added
+// to the conversation ALONGSIDE the original prompt, which still reaches the
+// model unchanged. So this hook's job is to compute the real numbers and
+// hand them to the model as context; the model must relay them verbatim
+// (see SKILL.md "Savings tracking") instead of recomputing or estimating.
 
 // Preco por milhao de tokens (input/output), em USD. AJUSTAR conforme
 // tabela oficial: https://docs.claude.com/en/docs/about-claude/pricing
@@ -39,17 +47,15 @@ function readStdin() {
   });
 }
 
+function emit(context) {
+  process.stdout.write(JSON.stringify({
+    hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: context },
+  }));
+  process.exit(0);
+}
+
 async function main() {
   const raw = await readStdin();
-  // DEBUG temporario: prova que o hook foi invocado, mesmo sem match.
-  // Remover depois de confirmar que o hook dispara.
-  try {
-    require("fs").appendFileSync(
-      "C:\\Users\\smartts01\\model-router-hook-debug.log",
-      `${new Date().toISOString()} invoked, raw_len=${raw.length}\n`
-    );
-  } catch {}
-
   let input;
   try {
     input = JSON.parse(raw);
@@ -66,7 +72,8 @@ async function main() {
   try {
     lines = fs.readFileSync(input.transcript_path, "utf8").trim().split("\n");
   } catch (e) {
-    block(`model-router-stats: nao consegui ler o transcript (${e.code || e.message}).`);
+    emit(`[model-router-stats] nao consegui ler o transcript (${e.code || e.message}). Avise o usuario e nao invente numeros.`);
+    return;
   }
 
   // tier -> { in, out, calls }  (direct = main thread, routed = subagent/sidechain)
@@ -103,31 +110,23 @@ async function main() {
   }
 
   if (totalCalls === 0) {
-    block("model-router-stats: nenhuma chamada com uso de tokens encontrada nesta sessao ainda.");
+    emit("[model-router-stats] nenhuma chamada com uso de tokens encontrada nesta sessao ainda. Avise o usuario e nao invente numeros.");
+    return;
   }
 
   const pct = baseline > 0 ? (1 - actual / baseline) * 100 : 0;
-  const reason = [
-    `model-router — uso real desta sessao (lido do transcript, nao estimado):`,
+  const report = [
+    `[model-router-stats] relatorio REAL, lido agora do transcript desta sessao (nao estimado). Mostre estes numeros ao usuario tal como estao, sem recalcular ou arredondar diferente:`,
     ...rows,
     ``,
     `Custo real:     $${actual.toFixed(4)}`,
     `Baseline opus:  $${baseline.toFixed(4)}  (mesmos tokens, tudo em opus)`,
     `Economia:       ${pct.toFixed(1)}%`,
     ``,
-    `Precos aproximados em PRICING no script — confira a tabela oficial antes de divulgar numeros.`,
+    `Precos aproximados (tabela PRICING do script) — avise o usuario para confirmar contra a tabela oficial antes de divulgar numeros publicamente.`,
   ].join("\n");
 
-  block(reason);
-}
-
-// UserPromptSubmit does not honor {"decision":"block"} the way Stop does
-// (confirmed against the official hookify plugin's rule_engine.py, which
-// only uses "decision":"block" for Stop/PreToolUse). To actually stop the
-// prompt from reaching the model here, exit 2 with the message on stderr.
-function block(message) {
-  process.stderr.write(message + "\n");
-  process.exit(2);
+  emit(report);
 }
 
 main();

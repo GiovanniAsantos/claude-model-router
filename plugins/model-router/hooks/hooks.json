@@ -1,5 +1,5 @@
 {
-  "description": "Reports real token savings from the session transcript on request.",
+  "description": "Injects real token-usage numbers (read from the session transcript) as additionalContext when the user asks about savings.",
   "hooks": {
     "UserPromptSubmit": [
       {
