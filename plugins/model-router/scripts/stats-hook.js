@@ -48,9 +48,11 @@ function readStdin() {
 }
 
 function emit(context) {
-  process.stdout.write(JSON.stringify({
-    hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: context },
-  }));
+  // Native Claude Code: UserPromptSubmit reads plain stdout text as
+  // additionalContext directly. The hookSpecificOutput JSON wrapper is only
+  // required for SubagentStart (confirmed against ponytail-runtime.js) —
+  // using it here caused the context to be silently dropped.
+  process.stdout.write(context);
   process.exit(0);
 }
 
