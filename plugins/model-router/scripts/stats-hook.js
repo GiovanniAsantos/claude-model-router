@@ -41,6 +41,15 @@ function readStdin() {
 
 async function main() {
   const raw = await readStdin();
+  // DEBUG temporario: prova que o hook foi invocado, mesmo sem match.
+  // Remover depois de confirmar que o hook dispara.
+  try {
+    require("fs").appendFileSync(
+      "C:\\Users\\smartts01\\model-router-hook-debug.log",
+      `${new Date().toISOString()} invoked, raw_len=${raw.length}\n`
+    );
+  } catch {}
+
   let input;
   try {
     input = JSON.parse(raw);
@@ -57,8 +66,7 @@ async function main() {
   try {
     lines = fs.readFileSync(input.transcript_path, "utf8").trim().split("\n");
   } catch (e) {
-    console.log(JSON.stringify({ decision: "block", reason: `model-router-stats: nao consegui ler o transcript (${e.code || e.message}).` }));
-    process.exit(0);
+    block(`model-router-stats: nao consegui ler o transcript (${e.code || e.message}).`);
   }
 
   // tier -> { in, out, calls }  (direct = main thread, routed = subagent/sidechain)
@@ -95,8 +103,7 @@ async function main() {
   }
 
   if (totalCalls === 0) {
-    console.log(JSON.stringify({ decision: "block", reason: "model-router-stats: nenhuma chamada com uso de tokens encontrada nesta sessao ainda." }));
-    process.exit(0);
+    block("model-router-stats: nenhuma chamada com uso de tokens encontrada nesta sessao ainda.");
   }
 
   const pct = baseline > 0 ? (1 - actual / baseline) * 100 : 0;
@@ -111,8 +118,16 @@ async function main() {
     `Precos aproximados em PRICING no script — confira a tabela oficial antes de divulgar numeros.`,
   ].join("\n");
 
-  console.log(JSON.stringify({ decision: "block", reason }));
-  process.exit(0);
+  block(reason);
+}
+
+// UserPromptSubmit does not honor {"decision":"block"} the way Stop does
+// (confirmed against the official hookify plugin's rule_engine.py, which
+// only uses "decision":"block" for Stop/PreToolUse). To actually stop the
+// prompt from reaching the model here, exit 2 with the message on stderr.
+function block(message) {
+  process.stderr.write(message + "\n");
+  process.exit(2);
 }
 
 main();
