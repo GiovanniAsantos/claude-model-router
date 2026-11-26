@@ -1,0 +1,9 @@
+{
+  "name": "model-router",
+  "version": "1.0.0",
+  "description": "Classifies each request and delegates it to the cheapest Claude model that can do it well (haiku/sonnet/opus), with a hook that reports real token savings from the session transcript.",
+  "author": { "name": "GiovanniAsantos" },
+  "repository": "https://github.com/GiovanniAsantos/claude-model-router",
+  "license": "MIT",
+  "keywords": ["model-routing", "cost-optimization", "tokens", "haiku", "sonnet", "opus"]
+}

@@ -88,7 +88,7 @@ Do not spawn a subagent just to read one small file you could read yourself in o
 
 ## Savings tracking (real, not estimated)
 
-`scripts/stats-hook.js` is a `UserPromptSubmit` hook (registered in the user's `settings.json`) that reads the session's own transcript JSONL — the same file Claude Code writes every assistant turn to, main thread and subagents (`isSidechain`) alike, each with real `model` and `usage` token counts. No estimation, no self-reported tally.
+`scripts/stats-hook.js` is a `UserPromptSubmit` hook, bundled with this plugin (`hooks/hooks.json`, loads automatically once the plugin is enabled — no manual settings.json edit needed) that reads the session's own transcript JSONL — the same file Claude Code writes every assistant turn to, main thread and subagents (`isSidechain`) alike, each with real `model` and `usage` token counts. No estimation, no self-reported tally.
 
 - On every normal turn it does one cheap substring check on the prompt and exits immediately — it does not parse the transcript unless the trigger phrase is present. Negligible weight on the session.
 - On trigger (`/model-router-stats`, "quanto economizei", "% de economia", etc.) it parses the transcript once, sums real input/output tokens per tier (`direct` = main session, `routed` = subagent calls) using `PRICING` constants in the script, and computes `% economia = (1 - custo_real / custo_se_tudo_fosse_opus) × 100`.

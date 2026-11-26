@@ -1,0 +1,15 @@
+{
+  "name": "claude-model-router",
+  "owner": { "name": "GiovanniAsantos" },
+  "metadata": {
+    "description": "Automatic model routing for Claude Code: delegates each request to the cheapest Claude model that can do it well, with real token-savings reporting."
+  },
+  "plugins": [
+    {
+      "name": "model-router",
+      "source": "./plugins/model-router",
+      "description": "Routes requests to haiku/sonnet/opus by cost/complexity and reports real token savings from the session transcript.",
+      "version": "1.0.0"
+    }
+  ]
+}

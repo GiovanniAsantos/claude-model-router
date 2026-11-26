@@ -1,62 +1,37 @@
 # claude-model-router
 
-Skill para Claude Code que escolhe automaticamente o modelo mais barato capaz de resolver cada pedido, economizando tokens.
+Plugin do [Claude Code](https://code.claude.com) que escolhe automaticamente o modelo mais barato capaz de resolver cada pedido, economizando tokens — e reporta a economia **real**, lida do transcript da sessão, não estimada.
 
 | Pedido | Modelo |
 |---|---|
-| Pergunta trivial, edição de 1 linha | sessão principal (direto) |
+| Pergunta trivial, edição de 1-2 arquivos conhecidos | sessão principal (direto) |
 | Ler, buscar, resumir arquivos/docs | Haiku |
 | Refatorar, corrigir, testes, implementar plano | Sonnet |
 | Planejar, feature nova, arquitetura, bug difícil | Opus |
 
 ## Como funciona
 
-A sessão principal não troca o próprio modelo. A skill classifica o pedido e delega para um subagent com `model: haiku | sonnet | opus`. Se o resultado falhar, sobe um nível. Pedido misto ("planeje e implemente") → Opus planeja, Sonnet implementa.
+A sessão principal não troca o próprio modelo. A skill classifica o pedido e delega para um subagent com `model: haiku | sonnet | opus`. Se o resultado falhar, sobe um nível carregando o que já foi descoberto. Pedido misto ("planeje e implemente") → Opus planeja, Sonnet implementa.
 
 ## Instalação
 
-Global (vale para todos os projetos e IDEs com Claude Code):
+No Claude Code (CLI, VS Code, JetBrains ou claude.ai/code):
 
 ```bash
-git clone https://github.com/<seu-usuario>/claude-model-router.git
+/plugin marketplace add GiovanniAsantos/claude-model-router
 ```
 
 ```bash
-mkdir -p ~/.claude/skills && cp -r claude-model-router/skills/model-router ~/.claude/skills/
+/plugin install model-router@claude-model-router
 ```
 
-Por projeto: copie para `.claude/skills/model-router/` dentro do repositório.
+Requisito: `node` no PATH (usado pelo hook de economia real de tokens).
 
-### Economia real de tokens (opcional)
+Para atualizar:
 
-A skill vem com um hook (`scripts/stats-hook.js`) que lê o transcript da própria sessão e reporta economia **real**, não estimada — soma tokens reais por modelo (`input`/`output`, sessão principal e subagents) e compara contra o custo se tudo tivesse rodado em Opus.
-
-Pra ativar, adicione em `~/.claude/settings.json` (ajuste o caminho pro seu SO):
-
-```json
-{
-  "hooks": {
-    "UserPromptSubmit": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"/caminho/para/~/.claude/skills/model-router/scripts/stats-hook.js\"",
-            "timeout": 10
-          }
-        ]
-      }
-    ]
-  }
-}
+```bash
+/plugin marketplace update claude-model-router
 ```
-
-Reinicie o Claude Code (hooks só carregam no início da sessão) e digite `/model-router-stats`.
-
-Em turnos normais o hook só faz um check de substring no prompt e sai — não lê o transcript, custo desprezível. Só parseia o arquivo quando a frase-gatilho aparece.
-
-Os preços usados ficam em `PRICING` no topo do script (USD por milhão de tokens) — confira contra a tabela oficial (https://docs.claude.com/en/docs/about-claude/pricing) antes de divulgar números.
 
 ## Uso
 
@@ -68,7 +43,37 @@ Depois disso, todo pedido é roteado. Para desligar: `stop router`. Para forçar
 
 **Dica:** rode a sessão principal em Sonnet (`/model sonnet`) — a classificação fica barata e só o trabalho pesado vai para o Opus.
 
+## Economia real de tokens
+
+```
+/model-router-stats
+```
+
+ou pergunte "quanto economizei" / "% de economia". O hook (`hooks/hooks.json` → `scripts/stats-hook.js`) lê o transcript JSONL da própria sessão — modelo e tokens reais de cada chamada, sessão principal e subagents — e compara o custo real contra o custo se tudo tivesse rodado em Opus. Sem estimativa do modelo: o hook intercepta o pedido e responde direto.
+
+Em turnos normais o hook só faz um check de substring no prompt e sai — não lê o transcript, custo desprezível. Só parseia o arquivo quando a frase-gatilho aparece.
+
+Os preços usados ficam em `PRICING` no topo de `plugins/model-router/scripts/stats-hook.js` (USD por milhão de tokens) — confira contra a tabela oficial (https://docs.claude.com/en/docs/about-claude/pricing) antes de divulgar números.
+
 ## Limitações
 
 - Subagent começa sem contexto: em tarefas minúsculas pode sair mais caro que fazer direto (por isso existe o nível "direto").
 - O resultado do subagent volta resumido para a sessão principal.
+- A economia reportada é só desta sessão (o transcript é por sessão); não acumula entre sessões.
+
+## Desenvolvimento
+
+```
+.claude-plugin/marketplace.json          marketplace (lista o plugin)
+plugins/model-router/
+  .claude-plugin/plugin.json             manifesto do plugin
+  skills/model-router/SKILL.md           regras de classificação e delegação
+  hooks/hooks.json                       UserPromptSubmit -> stats-hook.js
+  scripts/stats-hook.js                  leitura real do transcript + custo
+```
+
+Teste local do hook, sem precisar de uma sessão real:
+
+```bash
+echo '{"user_prompt":"/model-router-stats","transcript_path":"<sessao>.jsonl"}' | node plugins/model-router/scripts/stats-hook.js
+```
